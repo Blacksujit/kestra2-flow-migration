@@ -2070,6 +2070,16 @@ func pebbleAffixTest(target, filter, value string) string {
 	return fmt.Sprintf("%s | %s('%s')", target, filter, value)
 }
 
+// A Flow trigger `when` (trigger-level and each `dependsOn` entry) is rendered
+// against the upstream execution, so the upstream flow is `flow`. `trigger` is
+// undefined there: `{{ trigger.namespace == 'x' }}` fails with "Unable to find
+// `trigger`" and the trigger silently never fires. Like the operator form, this
+// passes `flows validate` — always name the upstream flow through these.
+const (
+	upstreamNamespace = "flow.namespace"
+	upstreamFlowID    = "flow.id"
+)
+
 // Returns ok=false for condition types that have no clean Pebble mapping
 // (ExecutionStatus, ExecutionLabels), for unknown condition types, and for
 // nested wrappers.
@@ -2087,18 +2097,18 @@ func flowConditionToWhenFragment(c *yaml.Node) (string, bool) {
 		suffix := stringValue(c, "comparison") == "SUFFIX"
 		switch {
 		case prefix:
-			return pebbleAffixTest("trigger.namespace", "startsWith", ns), true
+			return pebbleAffixTest(upstreamNamespace, "startsWith", ns), true
 		case suffix:
-			return pebbleAffixTest("trigger.namespace", "endsWith", ns), true
+			return pebbleAffixTest(upstreamNamespace, "endsWith", ns), true
 		}
-		return fmt.Sprintf("trigger.namespace == '%s'", ns), true
+		return fmt.Sprintf("%s == '%s'", upstreamNamespace, ns), true
 	case "ExecutionFlow":
 		fid := stringValue(c, "flowId")
 		ns := stringValue(c, "namespace")
 		if fid == "" || ns == "" {
 			return "", false
 		}
-		return fmt.Sprintf("trigger.flowId == '%s' and trigger.namespace == '%s'", fid, ns), true
+		return fmt.Sprintf("%s == '%s' and %s == '%s'", upstreamFlowID, fid, upstreamNamespace, ns), true
 	case "ExecutionOutputs":
 		expr := stringValue(c, "expression")
 		if expr == "" {
@@ -2306,9 +2316,9 @@ func collectFlowConditionFields(conds *yaml.Node, preconditionsPresent bool) (fl
 			suffix := stringValue(c, "comparison") == "SUFFIX"
 			switch {
 			case prefix:
-				cc.sharedWhenParts = append(cc.sharedWhenParts, pebbleAffixTest("trigger.namespace", "startsWith", ns))
+				cc.sharedWhenParts = append(cc.sharedWhenParts, pebbleAffixTest(upstreamNamespace, "startsWith", ns))
 			case suffix:
-				cc.sharedWhenParts = append(cc.sharedWhenParts, pebbleAffixTest("trigger.namespace", "endsWith", ns))
+				cc.sharedWhenParts = append(cc.sharedWhenParts, pebbleAffixTest(upstreamNamespace, "endsWith", ns))
 			default:
 				if preconditionsPresent {
 					return cc, false
@@ -2574,9 +2584,9 @@ func whereFilterToWhenFragment(f *yaml.Node) (string, bool) {
 	var target string
 	switch field {
 	case "NAMESPACE":
-		target = "trigger.namespace"
+		target = upstreamNamespace
 	case "FLOW_ID":
-		target = "trigger.flowId"
+		target = upstreamFlowID
 	default:
 		return "", false
 	}
